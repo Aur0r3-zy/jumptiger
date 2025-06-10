@@ -35,7 +35,9 @@ Or:
 
     $ sudo easy_install gevent
 
-运行moniter.py，得到可视化界面
+运行python server.py, 服务器端
+运行python local.py， 本地客户端
+在服务端运行python moniter.py，得到可视化界面
 
 
 troubleshooting
