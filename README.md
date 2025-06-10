@@ -1,20 +1,6 @@
 shadowsocks
-===========
 
-[![Build Status](https://travis-ci.org/clowwindy/shadowsocks.png)](https://travis-ci.org/clowwindy/shadowsocks)  
-Current version: 0.9
-
-shadowsocks is a lightweight tunnel proxy which can help you get through firewalls
-
-Other ports and clients can be found [here](https://github.com/clowwindy/shadowsocks/wiki/Ports-and-Clients).
-
-usage
------------
-
-First, make sure you have Python 2.6 or 2.7.
-
-    $ python --version
-    Python 2.6.8
+make sure you have Python 2.6 or 2.7.
 
 
 Then edit `config.json`, change the following values:
@@ -48,6 +34,9 @@ You may want to install gevent for better performance.
 Or:
 
     $ sudo easy_install gevent
+
+运行moniter.py，得到可视化界面
+
 
 troubleshooting
 ---------------
