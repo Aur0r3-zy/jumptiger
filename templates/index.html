@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JumpTiger Moniter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .card {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .status-active {
+            color: green;
+            font-weight: bold;
+        }
+        .status-closed {
+            color: #999;
+        }
+        .chart-container {
+            height: 400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .scrollable-table {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .filter-container {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        .filter-container input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .filter-container button {
+            padding: 8px 12px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .filter-container button:hover {
+            background-color: #45a049;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        let trafficChart;
+        let allConnections = []; // 存储所有连接以供筛选
+        let currentFilters = {}; // 存储当前筛选条件
+
+        const trafficData = {
+            labels: [],
+            datasets: [
+                {
+                    label: '实时入站流量 (KB/s)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    data: [],
+                },
+                {
+                    label: '实时出站流量 (KB/s)',
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    data: [],
+                }
+            ]
+        };
+
+        async function fetchStats() {
+            const response = await fetch('/api/stats');
+            const data = await response.json();
+            if (data.error) {
+                console.error(data.error);
+                return;
+            }
+
+            // 更新系统概览
+            document.getElementById('total-connections').textContent = data.total_connections;
+            document.getElementById('active-connections').textContent = data.active_connections;
+            document.getElementById('total-bytes-in').textContent = formatTraffic(data.total_bytes_in);
+            document.getElementById('total-bytes-out').textContent = formatTraffic(data.total_bytes_out);
+
+            // 存储连接数据以供筛选
+            allConnections = data.connections.slice(0, 500); // 限制连接列表内容在500条以内
+
+            // 应用当前筛选条件更新连接列表
+            applyFilters();
+
+            // 更新流量图表，使用实时流量字段
+            const currentTime = new Date().toLocaleTimeString();
+            trafficData.labels.push(currentTime);
+            trafficData.datasets[0].data.push((data.real_time_bytes_in / 1024).toFixed(2)); // 实时入站流量
+            trafficData.datasets[1].data.push((data.real_time_bytes_out / 1024).toFixed(2)); // 实时出站流量
+            if (trafficData.labels.length > 20) {
+                trafficData.labels.shift();
+                trafficData.datasets[0].data.shift();
+                trafficData.datasets[1].data.shift();
+            }
+            trafficChart.update();
+        }
+
+        function updateConnectionList(connections) {
+            const connectionsBody = document.getElementById('connections-body');
+            connectionsBody.innerHTML = '';
+            connections.forEach(conn => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${conn.id}</td>
+                    <td>${conn.host}</td>
+                    <td>${conn.port}</td>
+                    <td>${new Date(conn.start_time * 1000).toLocaleString()}</td>
+                    <td>${formatTraffic(conn.bytes_in)}</td>
+                    <td>${formatTraffic(conn.bytes_out)}</td>
+                    <td class="${conn.status === 'active' ? 'status-active' : 'status-closed'}">${conn.status}</td>
+                `;
+                connectionsBody.appendChild(row);
+            });
+        }
+
+        function filterConnections() {
+            const ipFilter = document.getElementById('filter-ip').value.trim();
+            const timeFilter = document.getElementById('filter-time').value.trim();
+            const sizeFilter = document.getElementById('filter-size').value.trim();
+
+            // 存储当前筛选条件
+            currentFilters = {
+                ip: ipFilter,
+                time: timeFilter,
+                size: sizeFilter
+            };
+
+            applyFilters();
+        }
+
+        function applyFilters() {
+            const filteredConnections = allConnections.filter(conn => {
+                const matchesIP = currentFilters.ip ? conn.host.includes(currentFilters.ip) : true;
+                const matchesTime = currentFilters.time ? new Date(conn.start_time * 1000).toLocaleString().includes(currentFilters.time) : true;
+                const matchesSize = currentFilters.size ? conn.bytes_in / 1024 >= parseFloat(currentFilters.size) : true;
+                return matchesIP && matchesTime && matchesSize;
+            });
+
+            updateConnectionList(filteredConnections);
+        }
+
+        function formatTraffic(bytes) {
+            if (bytes >= 1024 * 1024 * 1024) {
+                return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+            } else if (bytes >= 1024 * 1024) {
+                return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+            } else if (bytes >= 1024) {
+                return (bytes / 1024).toFixed(2) + ' KB';
+            } else {
+                return bytes + ' B';
+            }
+        }
+
+        function initializeChart() {
+            const ctx = document.getElementById('trafficChart').getContext('2d');
+            trafficChart = new Chart(ctx, {
+                type: 'line',
+                data: trafficData,
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: '时间'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: '流量 (KB/s)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        window.onload = () => {
+            initializeChart();
+            fetchStats();
+            setInterval(fetchStats, 2000); // 每2秒获取一次数据
+        };
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>服务器监控仪表盘</h1>
+        </div>
+        <div class="card">
+            <h2>系统概览</h2>
+            <table>
+                <tr>
+                    <td>总连接数：</td>
+                    <td id="total-connections">0</td>
+                </tr>
+                <tr>
+                    <td>活跃连接数：</td>
+                    <td id="active-connections">0</td>
+                </tr>
+                <tr>
+                    <td>总入站流量：</td>
+                    <td id="total-bytes-in">0 KB</td>
+                </tr>
+                <tr>
+                    <td>总出站流量：</td>
+                    <td id="total-bytes-out">0 KB</td>
+                </tr>
+            </table>
+        </div>
+        <div class="card">
+            <h2>流量监控</h2>
+            <div class="chart-container">
+                <canvas id="trafficChart"></canvas>
+            </div>
+        </div>
+        <div class="card">
+            <h2>连接列表</h2>
+            <div class="filter-container">
+                <input type="text" id="filter-ip" placeholder="按IP筛选">
+                <input type="text" id="filter-time" placeholder="按时间筛选">
+                <input type="number" id="filter-size" placeholder="最小数据包大小 (KB)">
+                <button onclick="filterConnections()">应用筛选</button>
+            </div>
+            <div class="scrollable-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>主机</th>
+                            <th>端口</th>
+                            <th>开始时间</th>
+                            <th>入站流量</th>
+                            <th>出站流量</th>
+                            <th>状态</th>
+                        </tr>
+                    </thead>
+                    <tbody id="connections-body">
+                        <!-- 连接数据将动态填充 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
