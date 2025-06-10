@@ -1,0 +1,7 @@
+{
+    "server":"127.0.0.1",
+    "server_port":8086,
+    "local_port":1030,
+    "password":"pwd",
+    "timeout":600
+}
