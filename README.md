@@ -1,4 +1,4 @@
-shadowsocks
+jumptiger
 
 make sure you have Python 2.6 or 2.7.
 
